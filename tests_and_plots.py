@@ -1,183 +1,116 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 from scipy import stats
 from statsmodels.stats.weightstats import ztest
-import matplotlib.pyplot as plt
-from pathlib import Path
 
-# ---------------------------
-# LOAD DATASET
-# ---------------------------
+# Load dataset
 df = pd.read_csv("unified_student_dataset.csv")
 
-# Create output folders
-OUT = Path("output_tests")
-FIG = OUT / "figures"
-OUT.mkdir(exist_ok=True)
-FIG.mkdir(exist_ok=True)
+# -----------------------------
+# Utility functions
+# -----------------------------
+def one_sample_z_test(column, hypothesized_mean):
+    data = df[column].dropna()
+    z_stat, p_val = ztest(data, value=hypothesized_mean)
+    return z_stat, p_val, data.mean()
 
+def one_sample_t_test(column, hypothesized_mean):
+    data = df[column].dropna()
+    t_stat, p_val = stats.ttest_1samp(data, hypothesized_mean)
+    return t_stat, p_val, data.mean()
 
-def save_fig(fig, name):
-    fig.savefig(FIG / f"{name}.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+def two_sample_t_test(column, group_col, group1, group2):
+    g1 = df[df[group_col] == group1][column].dropna()
+    g2 = df[df[group_col] == group2][column].dropna()
+    t_stat, p_val = stats.ttest_ind(g1, g2, equal_var=False)
+    return t_stat, p_val, g1.mean(), g2.mean()
 
-
-# ================================================================
-# 1️⃣ ONE-SAMPLE Z TEST (Mean Math Score vs Hypothesized Mean=75)
-# ================================================================
-def one_sample_z_test():
-    scores = df["math_score"].values
-    hypothesized_mean = 75
-
-    z_stat, p_val = ztest(scores, value=hypothesized_mean)
-
-    # Plot
-    fig, ax = plt.subplots()
-    ax.hist(scores, bins=20, alpha=0.7)
-    ax.axvline(scores.mean(), color="red", label="Sample Mean")
-    ax.axvline(hypothesized_mean, color="green", label="Hypothesized Mean")
-    ax.legend()
-    ax.set_title("One-Sample Z Test – Math Score")
-    save_fig(fig, "one_sample_z_test")
-
-    return {
-        "test": "One-sample Z-test",
-        "z_stat": float(z_stat),
-        "p_value": float(p_val),
-        "sample_mean": float(scores.mean())
-    }
-
-
-# ================================================================
-# 2️⃣ ONE-SAMPLE T TEST (Mean Study Hours Before Coaching vs Mean=6)
-# ================================================================
-def one_sample_t_test():
-    before = df["study_before"].values
-    hypothesized_mean = 6
-
-    t_stat, p_val = stats.ttest_1samp(before, hypothesized_mean)
-
-    # Plot
-    fig, ax = plt.subplots()
-    ax.hist(before, bins=20, alpha=0.7)
-    ax.axvline(before.mean(), color="red", label="Sample Mean")
-    ax.axvline(hypothesized_mean, color="green", label="Hypothesized Mean")
-    ax.legend()
-    ax.set_title("One-Sample T Test – Study Hours Before")
-    save_fig(fig, "one_sample_t_test")
-
-    return {
-        "test": "One-sample T-test",
-        "t_stat": float(t_stat),
-        "p_value": float(p_val),
-        "sample_mean": float(before.mean())
-    }
-
-
-# ================================================================
-# 3️⃣ TWO-SAMPLE T TEST (Male vs Female Math Scores)
-# ================================================================
-def two_sample_t_test():
-    male = df[df["gender"] == "M"]["math_score"].values
-    female = df[df["gender"] == "F"]["math_score"].values
-
-    t_stat, p_val = stats.ttest_ind(male, female, equal_var=False)
-
-    # Plot
-    fig, ax = plt.subplots()
-    ax.hist(male, bins=20, alpha=0.6, label="Male")
-    ax.hist(female, bins=20, alpha=0.6, label="Female")
-    ax.legend()
-    ax.set_title("Two-Sample T Test – Gender Math Scores")
-    save_fig(fig, "two_sample_t_test")
-
-    return {
-        "test": "Two-sample T-test",
-        "t_stat": float(t_stat),
-        "p_value": float(p_val),
-        "male_mean": float(male.mean()),
-        "female_mean": float(female.mean())
-    }
-
-
-# ================================================================
-# 4️⃣ F TEST (Variance Difference Between School A & B)
-# ================================================================
-def f_test():
-    A = df[df["school"] == "A"]["math_score"].values
-    B = df[df["school"] == "B"]["math_score"].values
-
-    varA = np.var(A, ddof=1)
-    varB = np.var(B, ddof=1)
-
-    F = varA / varB
-    df1 = len(A) - 1
-    df2 = len(B) - 1
-
+def f_test(column, group_col, group1, group2):
+    g1 = df[df[group_col] == group1][column].dropna()
+    g2 = df[df[group_col] == group2][column].dropna()
+    var1, var2 = g1.var(ddof=1), g2.var(ddof=1)
+    F = var1 / var2
+    dfn, dfd = len(g1)-1, len(g2)-1
     if F > 1:
-        p_value = 2 * (1 - stats.f.cdf(F, df1, df2))
+        p_val = 2 * (1 - stats.f.cdf(F, dfn, dfd))
     else:
-        p_value = 2 * stats.f.cdf(F, df1, df2)
+        p_val = 2 * stats.f.cdf(F, dfn, dfd)
+    return F, p_val, var1, var2
 
-    # Plot
-    fig, ax = plt.subplots()
-    ax.boxplot([A, B], labels=["School A", "School B"])
-    ax.set_title("F Test – Variances of Math Scores")
-    save_fig(fig, "f_test")
-
-    return {
-        "test": "F-test (variance)",
-        "F_stat": float(F),
-        "p_value": float(p_value),
-        "var_A": float(varA),
-        "var_B": float(varB)
-    }
+def z_test_two_means(column, group_col, group1, group2):
+    g1 = df[df[group_col] == group1][column].dropna()
+    g2 = df[df[group_col] == group2][column].dropna()
+    z_stat, p_val = ztest(g1, g2)
+    return z_stat, p_val, g1.mean(), g2.mean()
 
 
-# =========================================================================
-# 5️⃣ Z TEST FOR DIFFERENCE BETWEEN TWO MEANS (School A vs School B Means)
-# =========================================================================
-def z_test_two_means():
-    A = df[df["school"] == "A"]["math_score"].values
-    B = df[df["school"] == "B"]["math_score"].values
+# ------------------------------------------
+# USER INTERACTIVE MENU
+# ------------------------------------------
+print("\n📌 AVAILABLE COLUMNS:")
+for col in df.columns:
+    print(" -", col)
 
-    z_stat, p_val = ztest(A, B)
+print("\n📌 TEST OPTIONS:\n"
+      "1. One-sample Z Test\n"
+      "2. One-sample T Test\n"
+      "3. Two-sample T Test\n"
+      "4. F Test (variance)\n"
+      "5. Z Test for Difference Between Two Means\n")
 
-    # Plot
-    fig, ax = plt.subplots()
-    ax.hist(A, bins=20, alpha=0.6, label="School A")
-    ax.hist(B, bins=20, alpha=0.6, label="School B")
-    ax.legend()
-    ax.set_title("Z Test for Difference Between Two Means – Math Scores")
-    save_fig(fig, "z_test_two_means")
+choice = int(input("Enter the test number you want to perform: "))
 
-    return {
-        "test": "Z-test for Difference Between Two Means",
-        "z_stat": float(z_stat),
-        "p_value": float(p_val),
-        "mean_A": float(A.mean()),
-        "mean_B": float(B.mean())
-    }
+# ------------------------------------------
+# ONE-SAMPLE TESTS
+# ------------------------------------------
+if choice in [1, 2]:
+    col = input("Enter the column name to test: ")
+    hypo = float(input("Enter the hypothesized mean value: "))
 
+    if choice == 1:
+        z, p, mean = one_sample_z_test(col, hypo)
+        print("\n📌 ONE SAMPLE Z TEST RESULT")
+        print("Column:", col)
+        print("Sample Mean:", mean)
+        print("Z-Statistic:", z)
+        print("p-value:", p)
 
-# ================================================================
-# RUN ALL TESTS
-# ================================================================
-def main():
-    results = []
-    results.append(one_sample_z_test())
-    results.append(one_sample_t_test())
-    results.append(two_sample_t_test())
-    results.append(f_test())
-    results.append(z_test_two_means())
+    else:
+        t, p, mean = one_sample_t_test(col, hypo)
+        print("\n📌 ONE SAMPLE T TEST RESULT")
+        print("Column:", col)
+        print("Sample Mean:", mean)
+        print("T-Statistic:", t)
+        print("p-value:", p)
 
-    # Save results
-    with open(OUT / "results.txt", "w") as f:
-        for r in results:
-            f.write(str(r) + "\n\n")
+# ------------------------------------------
+# TWO-SAMPLE TESTS
+# ------------------------------------------
+else:
+    col = input("Enter the measurement column: ")
+    group_col = input("Enter the grouping column: ")
+    g1 = input("Enter first group value: ")
+    g2 = input("Enter second group value: ")
 
-    print("All tests completed! Check the output_tests/ folder.")
+    if choice == 3:
+        t, p, m1, m2 = two_sample_t_test(col, group_col, g1, g2)
+        print("\n📌 TWO SAMPLE T TEST RESULT")
+        print("Means:", m1, "(Group:", g1, ")  vs", m2, "(Group:", g2, ")")
+        print("T-Statistic:", t)
+        print("p-value:", p)
 
+    elif choice == 4:
+        F, p, v1, v2 = f_test(col, group_col, g1, g2)
+        print("\n📌 F TEST RESULT")
+        print("Variances:", v1, "(Group:", g1, ")  vs", v2, "(Group:", g2, ")")
+        print("F-Statistic:", F)
+        print("p-value:", p)
 
-if __name__ == "__main__":
-    main()
+    elif choice == 5:
+        z, p, m1, m2 = z_test_two_means(col, group_col, g1, g2)
+        print("\n📌 Z TEST FOR DIFFERENCE OF TWO MEANS")
+        print("Means:", m1, "(Group:", g1, ")  vs", m2, "(Group:", g2, ")")
+        print("Z-Statistic:", z)
+        print("p-value:", p)
+
+print("\n✅ Test completed successfully!")
